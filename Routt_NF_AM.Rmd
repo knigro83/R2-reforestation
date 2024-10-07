@@ -101,18 +101,19 @@ extract_clims_katie <- function(breeding_zones,time_period,vars) {
     # make a temp dataframe copying the data for each zone
     bz_df <- as.data.frame(breeding_zones)
     # append climate summary data
-    bz_df$zone_max <- zmax/10
-    bz_df$zone_min <- zmin/10
-    bz_df$zone_mean <- zmean/10
-    bz_df$zone_median <- zmedian/10
-    bz_df$zone_center <- zcenter/10
-    bz_df$zone_transfer_limit <- zTL/10
+    bz_df$zone_max <- zmax
+    bz_df$zone_min <- zmin
+    bz_df$zone_mean <- zmean
+    bz_df$zone_median <- zmedian
+    bz_df$zone_center <- zcenter
+    bz_df$zone_transfer_limit <- zTL
     bz_df$clim_var <- variable
     # add to master dataframe
     full_df <- rbind(full_df,bz_df)
   }
   return(full_df)
 }
+
 
 #### Function 3
 ## load in a list of climate rasters and a list of climate summaries for a zone
@@ -175,14 +176,14 @@ breeding_zones <- breeding_zones %>%
 
 ###################### Extract climate data from zones #########################
 # time period to use as the point of reference for the SST - in this case historic conditions
-time_period <- "NA_NORM_6190_Bioclim_ASCII"
 # climate variables to use for the SST - in this case the defaults for the SST
-vars <- c("MCMT","SHM")
+vars <- c("NFFD","MAP", "MCMT", "SHM")
 
 # run the extract_clims function on the set of breeding zones
 # # # takes ~10 minutes
-climate <- extract_clims_katie(breeding_zones,time_period,vars)
-climate_historic <- climate
+time_period <- "NA_NORM_6190_Bioclim_ASCII"
+climate_historic <- extract_clims_katie(breeding_zones,time_period,vars)
+
 #2020's
 time_period <- "NA_ENSEMBLE_rcp85_2020s_Bioclim"
 climate_2020s <- extract_clims_katie(breeding_zones,time_period,vars)
@@ -216,64 +217,202 @@ all_climate_wide <- all_climate %>%
   dplyr::select(c(ZONE_NO, period, clim_var, zone_center)) %>% 
   pivot_wider(names_from = clim_var, values_from = zone_center)
 
-ggplot(clim_allspecies, aes(x=mcmt/10, y=shm/100))+
+ggplot(clim_allspecies, aes(x=nffd, y=map))+
+  geom_hex(alpha=0.7)+
+  facet_wrap(~species, scales="free")+
+  geom_point(data=all_climate_wide, aes(x=NFFD, y=MAP, col=period, shape=factor(ZONE_NO)))
+
+ggplot(clim_allspecies, aes(x=mcmt/10, y=shm/10))+
   geom_hex(alpha=0.7)+
   facet_wrap(~species, scales="free")+
   geom_point(data=all_climate_wide, aes(x=MCMT, y=SHM, col=period, shape=factor(ZONE_NO)))
 
+```
+
+```{r}
 ###look for seedlots
 ###I need to figure which "breeding zones" we are interested - this is how the tif files are labeled. 
 
-##breeding zone #350 equates to the 9000ft category of the seed zone that the Morgan Creek fire is in
-historic350 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/350_historic.tif")
-historic350_bseed_extract <- extract(historic350, bseed_vect)
-historic350_bseed_extract %>% 
+co_breedingzones_df <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/co_breeding_zones.csv")
+co_breedingzones_df %>% 
+  filter(SEED_COL_Z %in% c(26,29,55) & r2elev_z10 == "10000")
+
+##breeding zones 430. 431, and 434 are the zones for the 10000ft band in the Routt NF area of interest
+
+##read in nursery seed sources
+bseed<- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/nursery inventories/Bessey_info/20230707_besseylots_editedlatlongs.csv")
+lpseed<- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/nursery inventories/LuckyPeak_inventory_2022_editedlatlongs.csv")
+cdaseed <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/nursery inventories/CdA_inventory_2023_editedlatlongs.csv")
+
+bseed_vect <- bseed %>% 
+  filter(!alt_lat=="") %>% 
+  filter(!is.na(alt_lat)) %>% 
+  mutate(alt_lat=as.numeric(alt_lat), alt_long=ifelse(alt_long > 0, as.numeric(alt_long)*-1, as.numeric(alt_long))) %>% 
+  vect(geom=c("alt_long","alt_lat"), crs= "+proj=longlat +ellps=WGS84 +no_defs")
+
+lpseed_vect <- lpseed %>% 
+  filter(!alt_lat=="") %>% 
+  filter(!is.na(alt_lat)) %>% 
+  mutate(alt_lat=as.numeric(alt_lat), alt_long=ifelse(alt_long > 0, as.numeric(alt_long)*-1, as.numeric(alt_long))) %>% 
+  vect(geom=c("alt_long","alt_lat"), crs= "+proj=longlat +ellps=WGS84 +no_defs")
+
+cdaseed_vect <-cdaseed %>% 
+  filter(!alt_lat=="") %>% 
+  filter(!is.na(alt_lat)) %>% 
+  mutate(alt_lat=as.numeric(alt_lat), alt_long=ifelse(alt_long > 0, as.numeric(alt_long)*-1, as.numeric(alt_long))) %>% 
+  vect(geom=c("alt_long","alt_lat"), crs= "+proj=longlat +ellps=WGS84 +no_defs")
+##########
+
+historic430 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/430_historic.tif")
+historic430_bseed_extract <- extract(historic430, bseed_vect)
+historic430_bseed_extract %>% 
   bind_cols(as.data.frame(bseed_vect)) %>% 
-  filter(`match score`>0)
-historic350_lpseed_extract <- extract(historic350, lpseed_vect)
-historic350_lpseed_extract %>% 
+  filter(`match score`>50)
+historic430_lpseed_extract <- extract(historic430, lpseed_vect)
+historic430_lpseed_extract %>% 
   bind_cols(as.data.frame(lpseed_vect)) %>% 
   filter(`match score`>0)
 
-present350 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/350_present.tif")
-present350_bseed_extract <- extract(present350, bseed_vect)
-present350_bseed_extract %>% 
+present430 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/430_present.tif")
+present430_bseed_extract <- extract(present430, bseed_vect)
+present430_bseed_extract %>% 
   bind_cols(as.data.frame(bseed_vect)) %>% 
   filter(`match score`>0)
-present350_lpseed_extract <- extract(present350, lpseed_vect)
-present350_lpseed_extract %>% 
+present430_lpseed_extract <- extract(present430, lpseed_vect)
+present430_lpseed_extract %>% 
   bind_cols(as.data.frame(lpseed_vect)) %>% 
   filter(`match score`>0)
 
-early350 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/350_85_early.tif")
-early350_bseed_extract <- extract(early350, bseed_vect)
-early350_bseed_extract %>% 
+early430 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/430_85_early.tif")
+early430_bseed_extract <- extract(early430, bseed_vect)
+early430_bseed_extract %>% 
   bind_cols(as.data.frame(bseed_vect)) %>% 
   filter(`match score`>0)
-early350_lpseed_extract <- extract(early350, lpseed_vect)
-early350_lpseed_extract %>% 
+early430_lpseed_extract <- extract(early430, lpseed_vect)
+early430_lpseed_extract %>% 
   bind_cols(as.data.frame(lpseed_vect)) %>% 
   filter(`match score`>0)
 
-mid350 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/350_85_mid.tif")
-mid350_bseed_extract <- extract(mid350, bseed_vect)
-mid350_bseed_extract %>% 
+mid430 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/430_85_mid.tif")
+mid430_bseed_extract <- extract(mid430, bseed_vect)
+mid430_bseed_extract %>% 
   bind_cols(as.data.frame(bseed_vect)) %>% 
   filter(`match score`>0)
-mid350_lpseed_extract <- extract(mid350, lpseed_vect)
-mid350_lpseed_extract %>% 
+mid430_lpseed_extract <- extract(mid430, lpseed_vect)
+mid430_lpseed_extract %>% 
   bind_cols(as.data.frame(lpseed_vect)) %>% 
   filter(`match score`>0)
 
-late350 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/350_85_late.tif")
-late350_bseed_extract <- extract(late350, bseed_vect)
-late350_bseed_extract %>% 
+late430 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/430_85_late.tif")
+late430_bseed_extract <- extract(late430, bseed_vect)
+late430_bseed_extract %>% 
   bind_cols(as.data.frame(bseed_vect)) %>% 
   filter(`match score`>0)
-late350_lpseed_extract <- extract(late350, lpseed_vect)
-late350_lpseed_extract %>% 
+late430_lpseed_extract <- extract(late430, lpseed_vect)
+late430_lpseed_extract %>% 
   bind_cols(as.data.frame(lpseed_vect)) %>% 
   filter(`match score`>0)
 
+##
+historic431 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/431_historic.tif")
+historic431_bseed_extract <- extract(historic431, bseed_vect)
+historic431_bseed_extract %>% 
+  bind_cols(as.data.frame(bseed_vect)) %>% 
+  filter(`match score`>50)
+historic431_lpseed_extract <- extract(historic431, lpseed_vect)
+historic431_lpseed_extract %>% 
+  bind_cols(as.data.frame(lpseed_vect)) %>% 
+  filter(`match score`>0)
+
+present431 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/431_present.tif")
+present431_bseed_extract <- extract(present431, bseed_vect)
+present431_bseed_extract %>% 
+  bind_cols(as.data.frame(bseed_vect)) %>% 
+  filter(`match score`>0)
+present431_lpseed_extract <- extract(present431, lpseed_vect)
+present431_lpseed_extract %>% 
+  bind_cols(as.data.frame(lpseed_vect)) %>% 
+  filter(`match score`>0)
+
+early431 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/431_85_early.tif")
+early431_bseed_extract <- extract(early431, bseed_vect)
+early431_bseed_extract %>% 
+  bind_cols(as.data.frame(bseed_vect)) %>% 
+  filter(`match score`>0)
+early431_lpseed_extract <- extract(early431, lpseed_vect)
+early431_lpseed_extract %>% 
+  bind_cols(as.data.frame(lpseed_vect)) %>% 
+  filter(`match score`>0)
+
+mid431 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/431_85_mid.tif")
+mid431_bseed_extract <- extract(mid431, bseed_vect)
+mid431_bseed_extract %>% 
+  bind_cols(as.data.frame(bseed_vect)) %>% 
+  filter(`match score`>0)
+mid431_lpseed_extract <- extract(mid431, lpseed_vect)
+mid431_lpseed_extract %>% 
+  bind_cols(as.data.frame(lpseed_vect)) %>% 
+  filter(`match score`>0)
+
+late431 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/431_85_late.tif")
+late431_bseed_extract <- extract(late431, bseed_vect)
+late431_bseed_extract %>% 
+  bind_cols(as.data.frame(bseed_vect)) %>% 
+  filter(`match score`>0)
+late431_lpseed_extract <- extract(late431, lpseed_vect)
+late431_lpseed_extract %>% 
+  bind_cols(as.data.frame(lpseed_vect)) %>% 
+  filter(`match score`>0)
+
+##
+historic434 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/434_historic.tif")
+historic434_bseed_extract <- extract(historic434, bseed_vect)
+historic434_bseed_extract %>% 
+  bind_cols(as.data.frame(bseed_vect)) %>% 
+  filter(`match score`>50)
+historic434_lpseed_extract <- extract(historic434, lpseed_vect)
+historic434_lpseed_extract %>% 
+  bind_cols(as.data.frame(lpseed_vect)) %>% 
+  filter(`match score`>0)
+
+present434 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/434_present.tif")
+present434_bseed_extract <- extract(present434, bseed_vect)
+present434_bseed_extract %>% 
+  bind_cols(as.data.frame(bseed_vect)) %>% 
+  filter(`match score`>0)
+present434_lpseed_extract <- extract(present434, lpseed_vect)
+present434_lpseed_extract %>% 
+  bind_cols(as.data.frame(lpseed_vect)) %>% 
+  filter(`match score`>0)
+
+early434 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/434_85_early.tif")
+early434_bseed_extract <- extract(early434, bseed_vect)
+early434_bseed_extract %>% 
+  bind_cols(as.data.frame(bseed_vect)) %>% 
+  filter(`match score`>0)
+early434_lpseed_extract <- extract(early434, lpseed_vect)
+early434_lpseed_extract %>% 
+  bind_cols(as.data.frame(lpseed_vect)) %>% 
+  filter(`match score`>0)
+
+mid434 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/434_85_mid.tif")
+mid434_bseed_extract <- extract(mid434, bseed_vect)
+mid434_bseed_extract %>% 
+  bind_cols(as.data.frame(bseed_vect)) %>% 
+  filter(`match score`>0)
+mid434_lpseed_extract <- extract(mid434, lpseed_vect)
+mid434_lpseed_extract %>% 
+  bind_cols(as.data.frame(lpseed_vect)) %>% 
+  filter(`match score`>0)
+
+late434 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/434_85_late.tif")
+late434_bseed_extract <- extract(late434, bseed_vect)
+late434_bseed_extract %>% 
+  bind_cols(as.data.frame(bseed_vect)) %>% 
+  filter(`match score`>0)
+late434_lpseed_extract <- extract(late434, lpseed_vect)
+late434_lpseed_extract %>% 
+  bind_cols(as.data.frame(lpseed_vect)) %>% 
+  filter(`match score`>0)
 
 ```
