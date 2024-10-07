@@ -1,0 +1,279 @@
+---
+title: "Routt NF Assisted Migration Plan"
+author: "Katie Nigro"
+date: "2024-10-07"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#load libraries
+library(terra)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(plotly)
+library(egg)
+library(tmap)
+library(sf)
+library(raster)
+library(grid)
+library(gridExtra)
+library(tidyterra)
+```
+
+```{r}
+##read in species climate ranges
+clim_abla <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/clim_abla.csv")
+clim_piar <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/clim_piar.csv")
+clim_pifl <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/clim_pifl.csv")
+clim_pipo <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/clim_pipo.csv")
+clim_pipu <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/clim_pipu.csv")
+clim_psme <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/clim_psme.csv")
+clim_pien <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/engelmann_clim.csv")
+clim_pico <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/clim_pico.csv")
+```
+
+```{r}
+################################## Functions ###################################
+#### Function 1 
+# function to load rasters for climate variables for a set time period
+# "vars" is a list of climate variable names selected from the SST dataset
+# "time_period" is the time period that the climate variables should be selected for
+# again among the options available in the SST
+load_clims_katie <- function(vars,time_period) {
+  # initialize empty list
+  clim_list <- list()
+  # for each climate variable in the "vars" input, load the corresponding raster dataset
+  # for the time period specified with "time_period", and append that raster to "clim_list"
+  clim_list <- lapply(vars, function(clim) {
+    rast(paste("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/",time_period,"/tifs/",clim,"_wgs84.tif",sep=""))
+  })
+  # return the climate rasters
+  return(clim_list)
+}
+
+#### Function 2
+# function to extract summary data for the climate center and transfer limit of
+# a set of seed/breeding zones for use in zone-based SST runs. "breeding_zones" 
+# is a set of zones in terra vector format, "time_period" is the time period you
+# want to extract summary data for(typically "historic" 1961-1990 conditions), 
+# and "vars" is a list of climate variable names from the SST climate data.
+extract_clims_katie <- function(breeding_zones,time_period,vars) {
+  # initialize empty vectors
+  bz_df <- c()
+  full_df <- c()
+  zmax <- c()
+  zmin <- c()
+  zmean <- c()
+  zmedian <- c()
+  zcenter <- c()
+  zTL <- c()
+  variable <- c()
+  # loop through each climate variable in "vars"
+  for (var in vars) {
+    # load climate data using the load_clims function
+    clim <- load_clims_katie(var,time_period)
+    # loop through each zone in the set of zones
+    for (z in 1:nrow(breeding_zones)) {
+      # extract maximum value of the variable in the zone
+      zmax[z] <- as.numeric(extract(clim[[1]], breeding_zones[z], max, na.rm = TRUE)[2])
+      # extract minimum value of the variable in the zone
+      zmin[z] <- as.numeric(extract(clim[[1]], breeding_zones[z], min, na.rm = TRUE)[2])
+      # extract mean value of the variable in the zone
+      zmean[z] <- as.numeric(extract(clim[[1]], breeding_zones[z], mean, na.rm = TRUE)[2])
+      # extract median value of the variable in the zone
+      zmedian[z] <- as.numeric(extract(clim[[1]], breeding_zones[z], median, na.rm = TRUE)[2])
+      # calculate the transfer limit as half the range of variation in the zone
+      zTL[z] <- (zmax[[z]]-zmin[[z]])/2
+      # calculate the center of the range
+      zcenter[z] <- zmax[[z]]-zTL[[z]]
+      # save the name of the climate variable
+      variable[z] <- var
+      # print progress
+      print(paste("Extracting",var,"for zone",z,"out of",nrow(breeding_zones)))
+    }
+    # make a temp dataframe copying the data for each zone
+    bz_df <- as.data.frame(breeding_zones)
+    # append climate summary data
+    bz_df$zone_max <- zmax/10
+    bz_df$zone_min <- zmin/10
+    bz_df$zone_mean <- zmean/10
+    bz_df$zone_median <- zmedian/10
+    bz_df$zone_center <- zcenter/10
+    bz_df$zone_transfer_limit <- zTL/10
+    bz_df$clim_var <- variable
+    # add to master dataframe
+    full_df <- rbind(full_df,bz_df)
+  }
+  return(full_df)
+}
+
+#### Function 3
+## load in a list of climate rasters and a list of climate summaries for a zone
+## and perform the SST using the climate center of the zone to calculate match 
+## scores - this function uses the median climate value as the climate center
+SST_zone_median <- function(clims,zone_clims,region) {
+  y_n <- 0
+  for (clim in 1:length(clims)) {
+    clim_rast <- mask(crop(clims[[clim]],region),region)/10
+    clim_center <- zone_clims[[clim]]$zone_median
+    clim_TL <- zone_clims[[clim]]$zone_transfer_limit
+    clim_y <- (abs(clim_rast-clim_center)/clim_TL)^2
+    y_n <- y_n + clim_y
+  }
+  m <- (-1*(sqrt(y_n)-1))*100
+  m[m < 0] <- 0
+  set.names(m,"match score")
+  return(m)
+}
+
+################################################################################
+
+###################### Load in data for region and zones #######################
+######getting R2 data in order
+adminboundaries <- vect("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ArcGIS/S_USA.AdministrativeRegion/S_USA.AdministrativeRegion.shp")
+region_2 <- adminboundaries %>% 
+  subset(subset = adminboundaries$REGION=="02")
+region_2 <- project(region_2, "+proj=longlat +ellps=WGS84 +no_defs")
+
+region_2_4 <- adminboundaries %>% 
+  subset(subset = adminboundaries$REGION %in% c("02","03","04")) %>% 
+  project("+proj=longlat +ellps=WGS84 +no_defs")
+
+region_2_grid <- rast(region_2, nrow=200, ncol=200)
+region_2_rast <- rasterize(region_2, region_2_grid)
+
+##seed zones
+co_breedingzones<- vect("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/co_breedingzones.shp")
+
+routt_10000_bz <- co_breedingzones %>% filter(SEED_COL_Z %in% c(26,29,55) & r2elev_z10==10000)
+
+ggplot()+
+  geom_spatvector(data=routt_10000_bz, aes(fill=factor(SEED_COL_Z)))
+
+#### Input Data
+# status update
+print("loading in input data...")
+# load in shape file for region and set projection
+region_2_4
+# load in shape file for breeding zones and set projection
+breeding_zones <- project(routt_10000_bz,"+proj=longlat +ellps=WGS84 +no_defs")
+
+# remove undefined breeding zones labeled "0" and "1" - this may not be an issue for your zones
+# but we have some that are undefined (below and above the defined bands)
+breeding_zones <- breeding_zones[breeding_zones$ZONE_NO!="0",]
+breeding_zones <- breeding_zones %>% 
+  mutate(breeding_z = seq(1,nrow(breeding_zones),1))
+
+################################################################################
+
+###################### Extract climate data from zones #########################
+# time period to use as the point of reference for the SST - in this case historic conditions
+time_period <- "NA_NORM_6190_Bioclim_ASCII"
+# climate variables to use for the SST - in this case the defaults for the SST
+vars <- c("MCMT","SHM")
+
+# run the extract_clims function on the set of breeding zones
+# # # takes ~10 minutes
+climate <- extract_clims_katie(breeding_zones,time_period,vars)
+climate_historic <- climate
+#2020's
+time_period <- "NA_ENSEMBLE_rcp85_2020s_Bioclim"
+climate_2020s <- extract_clims_katie(breeding_zones,time_period,vars)
+
+#2050's
+time_period <- "NA_ENSEMBLE_rcp85_2050s_Bioclim"
+climate_2050s <- extract_clims_katie(breeding_zones,time_period,vars)
+
+#2080's
+time_period <- "NA_ENSEMBLE_rcp85_2080s_Bioclim"
+climate_2080s <- extract_clims_katie(breeding_zones,time_period,vars)
+
+all_climate <- bind_rows(climate_historic %>% mutate(period = "1970s"),
+                         climate_2020s %>% mutate(period = "2020s"),
+                         climate_2050s %>% mutate(period = "2050s"),
+                         climate_2080s %>% mutate(period = "2080s"))
+
+head(clim_abla)
+head(clim_piar)
+
+clim_allspecies<- bind_rows(clim_abla %>% mutate(species="abla"),
+          clim_piar %>% mutate(species="piar"),
+          clim_pifl %>% mutate(species="pifl"),
+          clim_pipo %>% mutate(species="pipo"),
+          clim_pipu %>% mutate(species="pipu"),
+          clim_psme %>% mutate(species="psme"),
+          clim_pien %>% mutate(species="pien"),
+          clim_pico %>% mutate(species="pico"))
+
+all_climate_wide <- all_climate %>% 
+  dplyr::select(c(ZONE_NO, period, clim_var, zone_center)) %>% 
+  pivot_wider(names_from = clim_var, values_from = zone_center)
+
+ggplot(clim_allspecies, aes(x=mcmt/10, y=shm/100))+
+  geom_hex(alpha=0.7)+
+  facet_wrap(~species, scales="free")+
+  geom_point(data=all_climate_wide, aes(x=MCMT, y=SHM, col=period, shape=factor(ZONE_NO)))
+
+###look for seedlots
+###I need to figure which "breeding zones" we are interested - this is how the tif files are labeled. 
+
+##breeding zone #350 equates to the 9000ft category of the seed zone that the Morgan Creek fire is in
+historic350 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/350_historic.tif")
+historic350_bseed_extract <- extract(historic350, bseed_vect)
+historic350_bseed_extract %>% 
+  bind_cols(as.data.frame(bseed_vect)) %>% 
+  filter(`match score`>0)
+historic350_lpseed_extract <- extract(historic350, lpseed_vect)
+historic350_lpseed_extract %>% 
+  bind_cols(as.data.frame(lpseed_vect)) %>% 
+  filter(`match score`>0)
+
+present350 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/350_present.tif")
+present350_bseed_extract <- extract(present350, bseed_vect)
+present350_bseed_extract %>% 
+  bind_cols(as.data.frame(bseed_vect)) %>% 
+  filter(`match score`>0)
+present350_lpseed_extract <- extract(present350, lpseed_vect)
+present350_lpseed_extract %>% 
+  bind_cols(as.data.frame(lpseed_vect)) %>% 
+  filter(`match score`>0)
+
+early350 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/350_85_early.tif")
+early350_bseed_extract <- extract(early350, bseed_vect)
+early350_bseed_extract %>% 
+  bind_cols(as.data.frame(bseed_vect)) %>% 
+  filter(`match score`>0)
+early350_lpseed_extract <- extract(early350, lpseed_vect)
+early350_lpseed_extract %>% 
+  bind_cols(as.data.frame(lpseed_vect)) %>% 
+  filter(`match score`>0)
+
+mid350 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/350_85_mid.tif")
+mid350_bseed_extract <- extract(mid350, bseed_vect)
+mid350_bseed_extract %>% 
+  bind_cols(as.data.frame(bseed_vect)) %>% 
+  filter(`match score`>0)
+mid350_lpseed_extract <- extract(mid350, lpseed_vect)
+mid350_lpseed_extract %>% 
+  bind_cols(as.data.frame(lpseed_vect)) %>% 
+  filter(`match score`>0)
+
+late350 <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/results/test_results/350_85_late.tif")
+late350_bseed_extract <- extract(late350, bseed_vect)
+late350_bseed_extract %>% 
+  bind_cols(as.data.frame(bseed_vect)) %>% 
+  filter(`match score`>0)
+late350_lpseed_extract <- extract(late350, lpseed_vect)
+late350_lpseed_extract %>% 
+  bind_cols(as.data.frame(lpseed_vect)) %>% 
+  filter(`match score`>0)
+
+
+```
