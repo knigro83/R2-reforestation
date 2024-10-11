@@ -35,7 +35,7 @@ clim_pifl <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace
 clim_pipo <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/clim_pipo.csv")
 clim_pipu <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/clim_pipu.csv")
 clim_psme <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/clim_psme.csv")
-clim_pien <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/engelmann_clim.csv")
+clim_pien <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/clim_pien.csv")
 clim_pico <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/clim_pico.csv")
 ```
 
@@ -237,7 +237,7 @@ all_climate <- c(normtif, clim2000s, clim2020s, clim2050s, clim2080s)
       # save the name of the climate variable
       variable[z] <- names(all_climate[[i]])
       # print progress
-      print(paste("Extracting",all_climate[[i]],"for zone",z,"out of",nrow(breeding_zones)))
+      print(paste("Extracting",names(all_climate[[i]]),"for zone",z,"out of",nrow(breeding_zones)))
     }
     # make a temp dataframe copying the data for each zone
     bz_df <- as.data.frame(breeding_zones)
@@ -260,8 +260,6 @@ ggplot(routt_climate_stats)+
   geom_point(aes(x=period, y=zone_center, shape=factor(ZONE_NO), color=period))+
   facet_wrap(~climvar, scales="free")+
   scale_color_manual(values=c("black","green","cyan3","yellow","red"))
-  
-
 
 clim_allspecies<- bind_rows(clim_abla %>% mutate(species="abla"),
           clim_piar %>% mutate(species="piar"),
@@ -276,13 +274,13 @@ all_climate_wide <- routt_climate_stats %>%
   dplyr::select(c(ZONE_NO, period, climvar, zone_center)) %>% 
   pivot_wider(names_from = climvar, values_from = zone_center)
 
-ggplot(clim_allspecies, aes(x=nffd, y=map))+
-  geom_hex(alpha=0.7)+
+ggplot(clim_allspecies, aes(x=NFFD, y=MAP))+
+  geom_density_2d_filled(contour_var = "ndensity", n=20)+
   facet_wrap(~species, scales="free")+
   geom_point(data=all_climate_wide, aes(x=NFFD, y=MAP, col=period, shape=factor(ZONE_NO)))
 
-ggplot(clim_allspecies, aes(x=mcmt/10, y=shm/10))+
-  geom_hex(alpha=0.7)+
+ggplot(clim_allspecies, aes(x=MCMT, y=SHM))+
+  geom_density_2d_filled(contour_var = "ndensity", n=20)+
   facet_wrap(~species, scales="free")+
   geom_point(data=all_climate_wide, aes(x=MCMT, y=SHM, col=period, shape=factor(ZONE_NO)))
 
