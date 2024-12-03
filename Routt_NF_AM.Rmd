@@ -154,6 +154,7 @@ region_2_rast <- rasterize(region_2, region_2_grid)
 co_breedingzones<- vect("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/co_breedingzones.shp")
 
 routt_10000_bz <- co_breedingzones %>% filter(SEED_COL_Z %in% c(26,29,55) & r2elev_z10==10000)
+routt_9000_bz <- co_breedingzones %>% filter(SEED_COL_Z %in% c(26,29,55) & r2elev_z10==9000)
 
 ggplot()+
   geom_spatvector(data=routt_10000_bz, aes(fill=factor(SEED_COL_Z)))
@@ -164,13 +165,18 @@ print("loading in input data...")
 # load in shape file for region and set projection
 region_2_4
 # load in shape file for breeding zones and set projection
-breeding_zones <- project(routt_10000_bz,"+proj=longlat +ellps=WGS84 +no_defs")
+breeding_zones_10000 <- project(routt_10000_bz,"+proj=longlat +ellps=WGS84 +no_defs")
+breeding_zones_9000 <- project(routt_9000_bz,"+proj=longlat +ellps=WGS84 +no_defs")
 
 # remove undefined breeding zones labeled "0" and "1" - this may not be an issue for your zones
 # but we have some that are undefined (below and above the defined bands)
-breeding_zones <- breeding_zones[breeding_zones$ZONE_NO!="0",]
-breeding_zones <- breeding_zones %>% 
-  mutate(breeding_z = seq(1,nrow(breeding_zones),1))
+breeding_zones_10000 <- breeding_zones_10000[breeding_zones_10000$ZONE_NO!="0",]
+breeding_zones_10000 <- breeding_zones_10000 %>% 
+  mutate(breeding_z = seq(1,nrow(breeding_zones_10000),1))
+
+breeding_zones_9000 <- breeding_zones_9000[breeding_zones_9000$ZONE_NO!="0",]
+breeding_zones_9000 <- breeding_zones_9000 %>% 
+  mutate(breeding_z = seq(1,nrow(breeding_zones_9000),1))
 
 ################################################################################
 
@@ -208,9 +214,10 @@ names(clim2080s) <- paste(filenames_edited,"_ssp585_2080s", sep="")
 
 all_climate <- c(normtif, clim2000s, clim2020s, clim2050s, clim2080s)
 
+###calculate climate medians for 10,000ft in Routt NF
  # initialize empty vectors
   bz_df <- c()
-  full_df <- c()
+  full_df_10000 <- c()
   zmax <- c()
   zmin <- c()
   zmean <- c()
@@ -221,15 +228,15 @@ all_climate <- c(normtif, clim2000s, clim2020s, clim2050s, clim2080s)
 # loop through each climate variable in "vars"
   for (i in 1:nlyr(all_climate)) {
     # loop through each zone in the set of zones
-    for (z in 1:nrow(breeding_zones)) {
+    for (z in 1:nrow(breeding_zones_10000)) {
       # extract maximum value of the variable in the zone
-      zmax[z] <- as.numeric(extract(all_climate[[i]], breeding_zones[z], max, na.rm = TRUE)[2])
+      zmax[z] <- as.numeric(extract(all_climate[[i]], breeding_zones_10000[z], max, na.rm = TRUE)[2])
       # extract minimum value of the variable in the zone
-      zmin[z] <- as.numeric(extract(all_climate[[i]], breeding_zones[z], min, na.rm = TRUE)[2])
+      zmin[z] <- as.numeric(extract(all_climate[[i]], breeding_zones_10000[z], min, na.rm = TRUE)[2])
       # extract mean value of the variable in the zone
-      zmean[z] <- as.numeric(extract(all_climate[[i]], breeding_zones[z], mean, na.rm = TRUE)[2])
+      zmean[z] <- as.numeric(extract(all_climate[[i]], breeding_zones_10000[z], mean, na.rm = TRUE)[2])
       # extract median value of the variable in the zone
-      zmedian[z] <- as.numeric(extract(all_climate[[i]], breeding_zones[z], median, na.rm = TRUE)[2])
+      zmedian[z] <- as.numeric(extract(all_climate[[i]], breeding_zones_10000[z], median, na.rm = TRUE)[2])
       # calculate the transfer limit as half the range of variation in the zone
       zTL[z] <- (zmax[[z]]-zmin[[z]])/2
       # calculate the center of the range
@@ -237,10 +244,10 @@ all_climate <- c(normtif, clim2000s, clim2020s, clim2050s, clim2080s)
       # save the name of the climate variable
       variable[z] <- names(all_climate[[i]])
       # print progress
-      print(paste("Extracting",names(all_climate[[i]]),"for zone",z,"out of",nrow(breeding_zones)))
+      print(paste("Extracting",names(all_climate[[i]]),"for zone",z,"out of",nrow(breeding_zones_10000)))
     }
     # make a temp dataframe copying the data for each zone
-    bz_df <- as.data.frame(breeding_zones)
+    bz_df <- as.data.frame(breeding_zones_10000)
     # append climate summary data
     bz_df$zone_max <- zmax
     bz_df$zone_min <- zmin
@@ -250,13 +257,72 @@ all_climate <- c(normtif, clim2000s, clim2020s, clim2050s, clim2080s)
     bz_df$zone_transfer_limit <- zTL
     bz_df$clim_var <- variable
     # add to master dataframe
-    full_df <- rbind(full_df,bz_df)
+    full_df_10000 <- rbind(full_df_10000,bz_df)
   }
 
-routt_climate_stats <- full_df %>% 
-  separate(clim_var, into = c("climvar","carbon","period"), remove = TRUE)
+routt_climate_stats_10000 <- full_df_10000 %>% 
+  separate(clim_var, into = c("climvar","carbon","period"), remove = TRUE) %>% 
+  mutate(elev=10000)
 
-ggplot(routt_climate_stats)+
+###calculate climate medians for 9,000ft in Routt NF
+ # initialize empty vectors
+  bz_df <- c()
+  full_df_9000 <- c()
+  zmax <- c()
+  zmin <- c()
+  zmean <- c()
+  zmedian <- c()
+  zcenter <- c()
+  zTL <- c()
+  variable <- c()
+# loop through each climate variable in "vars"
+  for (i in 1:nlyr(all_climate)) {
+    # loop through each zone in the set of zones
+    for (z in 1:nrow(breeding_zones_9000)) {
+      # extract maximum value of the variable in the zone
+      zmax[z] <- as.numeric(extract(all_climate[[i]], breeding_zones_9000[z], max, na.rm = TRUE)[2])
+      # extract minimum value of the variable in the zone
+      zmin[z] <- as.numeric(extract(all_climate[[i]], breeding_zones_9000[z], min, na.rm = TRUE)[2])
+      # extract mean value of the variable in the zone
+      zmean[z] <- as.numeric(extract(all_climate[[i]], breeding_zones_9000[z], mean, na.rm = TRUE)[2])
+      # extract median value of the variable in the zone
+      zmedian[z] <- as.numeric(extract(all_climate[[i]], breeding_zones_9000[z], median, na.rm = TRUE)[2])
+      # calculate the transfer limit as half the range of variation in the zone
+      zTL[z] <- (zmax[[z]]-zmin[[z]])/2
+      # calculate the center of the range
+      zcenter[z] <- zmax[[z]]-zTL[[z]]
+      # save the name of the climate variable
+      variable[z] <- names(all_climate[[i]])
+      # print progress
+      print(paste("Extracting",names(all_climate[[i]]),"for zone",z,"out of",nrow(breeding_zones_9000)))
+    }
+    # make a temp dataframe copying the data for each zone
+    bz_df <- as.data.frame(breeding_zones_9000)
+    # append climate summary data
+    bz_df$zone_max <- zmax
+    bz_df$zone_min <- zmin
+    bz_df$zone_mean <- zmean
+    bz_df$zone_median <- zmedian
+    bz_df$zone_center <- zcenter
+    bz_df$zone_transfer_limit <- zTL
+    bz_df$clim_var <- variable
+    # add to master dataframe
+    full_df_9000 <- rbind(full_df_9000,bz_df)
+  }
+
+routt_climate_stats_9000 <- full_df_9000 %>% 
+  separate(clim_var, into = c("climvar","carbon","period"), remove = TRUE) %>% 
+  mutate(elev=9000)
+
+routt_climate_stats <- bind_rows(routt_climate_stats_9000, routt_climate_stats_10000)
+
+
+ggplot(routt_climate_stats_9000)+
+  geom_point(aes(x=period, y=zone_center, shape=factor(ZONE_NO), color=period))+
+  facet_wrap(~climvar, scales="free")+
+  scale_color_manual(values=c("black","green","cyan3","yellow","red"))
+
+ggplot(routt_climate_stats_10000)+
   geom_point(aes(x=period, y=zone_center, shape=factor(ZONE_NO), color=period))+
   facet_wrap(~climvar, scales="free")+
   scale_color_manual(values=c("black","green","cyan3","yellow","red"))
@@ -271,18 +337,25 @@ clim_allspecies<- bind_rows(clim_abla %>% mutate(species="abla"),
           clim_pico %>% mutate(species="pico"))
 
 all_climate_wide <- routt_climate_stats %>% 
-  dplyr::select(c(ZONE_NO, period, climvar, zone_center)) %>% 
+  dplyr::select(c(ZONE_NO, elev, period, climvar, zone_center)) %>% 
   pivot_wider(names_from = climvar, values_from = zone_center)
 
+##takes ~ 3min to produce each graph
 ggplot(clim_allspecies, aes(x=NFFD, y=MAP))+
   geom_density_2d_filled(contour_var = "ndensity", n=20)+
-  facet_wrap(~species, scales="free")+
+  facet_grid(elev~species, scales="free")+
   geom_point(data=all_climate_wide, aes(x=NFFD, y=MAP, col=period, shape=factor(ZONE_NO)))
 
 ggplot(clim_allspecies, aes(x=MCMT, y=SHM))+
   geom_density_2d_filled(contour_var = "ndensity", n=20)+
-  facet_wrap(~species, scales="free")+
-  geom_point(data=all_climate_wide, aes(x=MCMT, y=SHM, col=period, shape=factor(ZONE_NO)))
+  facet_grid(elev~species, scales="free")+
+  geom_point(data=all_climate_wide, aes(x=MCMT, y=SHM, color=period, shape=factor(ZONE_NO)), size=3)+
+  scale_shape_manual(values=c(15,16,17))+
+  scale_color_manual(values=rev(sequential_hcl(palette="Heat 2", n=5)))+
+  ylim(c(0,150))
+
+library(colorspace)
+
 
 ```
 
