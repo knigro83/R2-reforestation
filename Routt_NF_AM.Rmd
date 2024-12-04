@@ -10,7 +10,7 @@ editor_options:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-
+#Set Up
 ```{r}
 #load libraries
 library(terra)
@@ -25,8 +25,10 @@ library(raster)
 library(grid)
 library(gridExtra)
 library(tidyterra)
+library(pals)
+library(colorspace)
 ```
-
+#Species Climate
 ```{r}
 ##read in species climate ranges
 clim_abla <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/clim_abla.csv")
@@ -38,7 +40,7 @@ clim_psme <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace
 clim_pien <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/clim_pien.csv")
 clim_pico <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/species_climate_niches/clim_pico.csv")
 ```
-
+# Breeding Zones
 ```{r}
 ################################## Functions ###################################
 #### Function 1 
@@ -143,6 +145,181 @@ region_2 <- adminboundaries %>%
   subset(subset = adminboundaries$REGION=="02")
 region_2 <- project(region_2, "+proj=longlat +ellps=WGS84 +no_defs")
 
+evt <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/LF2022_EVT_230_CONUS/LF2022_EVT_230_CONUS/Tif/LC22_EVT_230.tif")
+evt
+
+forest <- vect("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/S_USA.AdministrativeForest/S_USA.AdministrativeForest.shp")
+forest
+
+rd <- vect("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/S_USA.RangerDistrict/S_USA.RangerDistrict.shp")
+unique(rd$FORESTNAME)
+HPBE_boundary<- rd %>% filter(DISTRICTNA=="Hahns Peak-Bears Ears Ranger District")
+
+evt_crop<- crop(evt, c(-974840.957217,-743329.176273, 1852223.220100, 2146142.076590))
+plot(evt_crop)
+evt_project<- project(evt_crop, rd)
+plot(evt_project)
+evt_HPBE_crop <- crop(evt_project, HPBE_boundary)
+evt_HPBE <- mask(evt_HPBE_crop, HPBE_boundary)
+plot(evt_HPBE)
+
+x <- aggregate(rast(evt_HPBE), 100)
+a <- cellSize(x, unit="km") / 10000
+b <- resample(a, evt_HPBE)
+minmax(a) #cell size varies from .93 - .94 m2
+z <- zonal(b, evt_HPBE, sum, na.rm=TRUE)
+z %>% arrange(area)
+
+##fires
+mtbs_perims <- vect("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/mtbs_perimeter_data/mtbs_perims_DD.shp")
+mtbs_perims
+mtbs_perims_HPBE <- crop(mtbs_perims, HPBE_boundary)
+
+ggplot()+
+  geom_spatraster(data=evt_HPBE)+
+  geom_spatvector(data=mtbs_perims_HPBE %>% filter(Incid_Name %in% c("BIG RED","MORGAN CREEK")))+
+  theme(legend.position = "none")
+
+evt_bigred_crop <- crop(evt_HPBE_crop, mtbs_perims_HPBE %>% filter(Incid_Name == "BIG RED"))
+evt_bigred <- mask(evt_bigred_crop, mtbs_perims_HPBE %>% filter(Incid_Name == "BIG RED"))
+
+zonal(evt_bigred, evt_bigred, sum, na.rm=TRUE) %>% arrange(EVT_NAME.1)
+ggplot()+
+  geom_spatraster(data= evt_bigred)+
+  scale_fill_manual(values=unname(cols25(n=20)))
+
+evt_morgancr_crop <- crop(evt_HPBE_crop, mtbs_perims_HPBE %>% filter(Incid_Name == "MORGAN CREEK"))
+evt_morgancr <- mask(evt_morgancr_crop, mtbs_perims_HPBE %>% filter(Incid_Name == "MORGAN CREEK"))
+
+zonal(evt_morgancr, evt_morgancr, sum, na.rm=TRUE) %>% arrange(EVT_NAME.1)
+ggplot()+
+  geom_spatraster(data= evt_morgancr)+
+  scale_fill_manual(values=unname(cols25(n=25)))
+
+HPBE_elevW <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/USGS_13_n41w108_20230314.tif")
+HPBE_elevE <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/USGS_13_n41w107_20230314.tif")
+HPBE_elevNE <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/USGS_13_n42w107_20230314.tif")
+HPBE_elevNW <- rast("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/USGS_13_n42w108_20230314.tif")
+
+HPBE_elev <- merge(HPBE_elevE, HPBE_elevW, HPBE_elevNE, HPBE_elevNW)
+
+HPBE_elev_crop <- crop(HPBE_elev, HPBE_boundary)
+
+HPBE_elev_resamp <- resample(HPBE_elev_crop,evt_HPBE)
+
+###spruce-fir
+HPBE_SF <- evt_HPBE %>% filter(EVT_NAME %in% c("Rocky Mountain Subalpine Dry-Mesic Spruce-Fir Forest and Woodland","Rocky Mountain Subalpine Mesic-Wet Spruce-Fir Forest and Woodland")) 
+
+SF_elev <- mask(HPBE_elev_resamp, HPBE_SF)
+
+ggplot()+
+  geom_spatraster(data= SF_elev)+
+  geom_spatvector(data=HPBE_boundary, col="red", fill=NA)
+
+hist(SF_elev)
+SF_elev_list<- as.data.frame(SF_elev)$USGS_13_n41w107_20230314
+median(SF_elev_list)
+SF_elev_IQR = quantile(SF_elev_list, c(0.25,.75))[2] - quantile(SF_elev_list, c(0.25,.75))[1]
+quantile(SF_elev_list, c(0.25,.75))[1] - 1.5*SF_elev_IQR ## ~ 7,473 ft
+quantile(SF_elev_list, c(0.25,.75))[2] + 1.5*SF_elev_IQR ## ~ 11,292 ft
+boxplot(SF_elev_list)
+
+###lodgepole
+HPBE_LP <- evt_HPBE %>% filter(EVT_NAME %in% c("Rocky Mountain Lodgepole Pine Forest")) 
+
+LP_elev <- mask(HPBE_elev_resamp, HPBE_LP)
+
+ggplot()+
+  geom_spatraster(data= LP_elev)+
+  geom_spatvector(data=HPBE_boundary, col="red", fill=NA)
+
+hist(LP_elev)
+LP_elev_list<- as.data.frame(LP_elev)$USGS_13_n41w107_20230314
+median(LP_elev_list)
+LP_elev_IQR = quantile(LP_elev_list, c(0.25,.75))[2] - quantile(LP_elev_list, c(0.25,.75))[1]
+quantile(LP_elev_list, c(0.25,.75))[1] - 1.5*LP_elev_IQR ## ~ 7,349 ft
+quantile(LP_elev_list, c(0.25,.75))[2] + 1.5*LP_elev_IQR ## ~ 9,485 ft
+boxplot(LP_elev_list)
+
+##aspen
+HPBE_ASP <- evt_HPBE %>% filter(EVT_NAME %in% c("Rocky Mountain Aspen Forest and Woodland")) 
+
+ASP_elev <- mask(HPBE_elev_resamp, HPBE_ASP)
+
+ggplot()+
+  geom_spatraster(data= ASP_elev)+
+  geom_spatvector(data=HPBE_boundary, col="red", fill=NA)
+
+hist(ASP_elev)
+ASP_elev_list<- as.data.frame(ASP_elev)$USGS_13_n41w107_20230314
+median(ASP_elev_list)
+ASP_elev_IQR = quantile(ASP_elev_list, c(0.25,.75))[2] - quantile(ASP_elev_list, c(0.25,.75))[1]
+quantile(ASP_elev_list, c(0.25,.75))[1] - 1.5*ASP_elev_IQR ## ~ 7,342 ft
+quantile(ASP_elev_list, c(0.25,.75))[2] + 1.5*ASP_elev_IQR ## ~ 9,675 ft
+boxplot(ASP_elev_list)
+
+##gambel oak
+HPBE_GAM <- evt_HPBE %>% filter(EVT_NAME %in% c("Rocky Mountain Gambel Oak-Mixed Montane Shrubland")) 
+
+GAM_elev <- mask(HPBE_elev_resamp, HPBE_GAM)
+
+ggplot()+
+  geom_spatraster(data= GAM_elev)+
+  geom_spatvector(data=HPBE_boundary, col="red", fill=NA)
+
+hist(GAM_elev)
+GAM_elev_list<- as.data.frame(GAM_elev)$USGS_13_n41w107_20230314
+median(GAM_elev_list)
+GAM_elev_IQR = quantile(GAM_elev_list, c(0.25,.75))[2] - quantile(GAM_elev_list, c(0.25,.75))[1]
+quantile(GAM_elev_list, c(0.25,.75))[1] - 1.5*GAM_elev_IQR ## ~ 6,709 ft
+quantile(GAM_elev_list, c(0.25,.75))[2] + 1.5*GAM_elev_IQR ## ~ 9,504 ft
+boxplot(GAM_elev_list)
+
+##all species
+allspp_elev<- data.frame(evt=c(rep("spruce-fir", length(SF_elev_list)), rep("lodgepole", length(LP_elev_list)),rep("aspen",length(ASP_elev_list)),rep("gambel oak", length(GAM_elev_list))), elev=c(SF_elev_list,LP_elev_list, ASP_elev_list, GAM_elev_list))
+
+ggplot()+
+    geom_histogram(data=as.data.frame(SF_elev), aes(x= USGS_13_n41w107_20230314*3.281), alpha=0.3, fill="purple", col="purple")+
+    geom_histogram(data=as.data.frame(ASP_elev), aes(x= USGS_13_n41w107_20230314*3.281), alpha=0.3, fill="orange", col="orange")+
+    geom_histogram(data=as.data.frame(GAM_elev), aes(x= USGS_13_n41w107_20230314*3.281), alpha=0.3, fill="red", col="red")+
+    geom_histogram(data=as.data.frame(LP_elev), aes(x= USGS_13_n41w107_20230314*3.281), alpha=0.3, fill="black", col="black")+
+      # geom_vline(xintercept=median(SF_elev_list), col="purple")+
+      # geom_vline(xintercept=median(ASP_elev_list), col="orange")+
+      # geom_vline(xintercept=median(GAM_elev_list), col="red")+
+      # geom_vline(xintercept=median(LP_elev_list), col="black")+
+  xlab("Elevation (ft)")+
+  theme_bw()+
+  theme(text=element_text(size=18))
+
+ggplot()+
+      geom_histogram(data=as.data.frame(GAM_elev), aes(x= USGS_13_n41w107_20230314), alpha=0.3, fill="red")
+z_props<- z %>% 
+  mutate(sum=sum(z$area)) %>% 
+  mutate(prop=area/sum)
+
+ggplot(z_props %>% filter(prop>.01) %>% arrange(prop), aes(x=1,y=prop, fill=factor(EVT_NAME, levels=z_props %>% filter(prop>.01) %>% arrange(prop) %>% pull(EVT_NAME))))+
+  geom_bar(stat="identity")+
+  scale_fill_manual(values=unname(cols25(n=8)), name="Veg Type")+
+  xlab("")+
+  ylab("Proportion of Area")+
+  theme_bw()+
+  theme(text=element_text(size=16))
+
+
+ggplot()+
+  geom_spatraster(data=evt_HPBE %>% filter(EVT_NAME %in% c(z_props %>% filter(prop>.01) %>% arrange(prop) %>% pull(EVT_NAME))), aes(fill=EVT_NAME))+
+    scale_fill_manual(values=c(unname(cols25(n=8))[7],unname(cols25(n=8))[5],unname(cols25(n=8))[1],unname(cols25(n=8))[8],unname(cols25(n=8))[6],unname(cols25(n=8))[4],unname(cols25(n=8))[3],unname(cols25(n=8))[2]), name="Veg Type")
+
+##elevation of fires
+morgan_creek_elev_crop<- crop(HPBE_elev, mtbs_perims_HPBE %>% filter(Incid_Name == "MORGAN CREEK"))
+morgan_creek_elev <- mask(morgan_creek_elev_crop, mtbs_perims_HPBE %>% filter(Incid_Name == "MORGAN CREEK"))
+hist(morgan_creek_elev*3.281, main="Morgan Creek Fire Elevations")
+
+big_red_elev_crop<- crop(HPBE_elev, mtbs_perims_HPBE %>% filter(Incid_Name == "BIG RED"))
+big_red_elev <- mask(big_red_elev_crop, mtbs_perims_HPBE %>% filter(Incid_Name == "BIG RED"))
+hist(big_red_elev*3.281, main="Big Red Fire Elevations")
+#####
+
 region_2_4 <- adminboundaries %>% 
   subset(subset = adminboundaries$REGION %in% c("02","03","04")) %>% 
   project("+proj=longlat +ellps=WGS84 +no_defs")
@@ -157,7 +334,21 @@ routt_10000_bz <- co_breedingzones %>% filter(SEED_COL_Z %in% c(26,29,55) & r2el
 routt_9000_bz <- co_breedingzones %>% filter(SEED_COL_Z %in% c(26,29,55) & r2elev_z10==9000)
 
 ggplot()+
-  geom_spatvector(data=routt_10000_bz, aes(fill=factor(SEED_COL_Z)))
+  geom_spatvector(data=routt_10000_bz, aes(fill=factor(SEED_COL_Z)))+
+  geom_spatvector(data=HPBE_boundary, fill=NA, col="red")
+
+##narrow down to Hahns Peak - Bears Ears RD
+HPBE_10000<- crop(routt_10000_bz, HPBE_boundary) %>% 
+  mutate(SEED_COL_Z="1") %>% 
+  aggregate(by="SEED_COL_Z")
+
+HPBE_9000<- crop(routt_9000_bz, HPBE_boundary) %>% 
+  mutate(SEED_COL_Z="1") %>% 
+  aggregate(by="SEED_COL_Z")
+
+ggplot()+
+  geom_spatvector(data=HPBE_10000, aes(fill=factor(SEED_COL_Z)))+
+  geom_spatvector(data=HPBE_boundary, fill=NA, col="red")
 
 #### Input Data
 # status update
@@ -165,21 +356,15 @@ print("loading in input data...")
 # load in shape file for region and set projection
 region_2_4
 # load in shape file for breeding zones and set projection
-breeding_zones_10000 <- project(routt_10000_bz,"+proj=longlat +ellps=WGS84 +no_defs")
-breeding_zones_9000 <- project(routt_9000_bz,"+proj=longlat +ellps=WGS84 +no_defs")
-
-# remove undefined breeding zones labeled "0" and "1" - this may not be an issue for your zones
-# but we have some that are undefined (below and above the defined bands)
-breeding_zones_10000 <- breeding_zones_10000[breeding_zones_10000$ZONE_NO!="0",]
-breeding_zones_10000 <- breeding_zones_10000 %>% 
-  mutate(breeding_z = seq(1,nrow(breeding_zones_10000),1))
-
-breeding_zones_9000 <- breeding_zones_9000[breeding_zones_9000$ZONE_NO!="0",]
-breeding_zones_9000 <- breeding_zones_9000 %>% 
-  mutate(breeding_z = seq(1,nrow(breeding_zones_9000),1))
+breeding_zones_10000 <- project(HPBE_10000,"+proj=longlat +ellps=WGS84 +no_defs")
+breeding_zones_9000 <- project(HPBE_9000,"+proj=longlat +ellps=WGS84 +no_defs")
 
 ################################################################################
+```
 
+#Extract Climate from Zones
+
+```{r}
 ###################### Extract climate data from zones #########################
 # time period to use as the point of reference for the SST - in this case historic conditions
 # climate variables to use for the SST - in this case the defaults for the SST
@@ -216,7 +401,7 @@ all_climate <- c(normtif, clim2000s, clim2020s, clim2050s, clim2080s)
 
 ###calculate climate medians for 10,000ft in Routt NF
  # initialize empty vectors
-  bz_df <- c()
+  bz_df_10000 <- c()
   full_df_10000 <- c()
   zmax <- c()
   zmin <- c()
@@ -247,17 +432,17 @@ all_climate <- c(normtif, clim2000s, clim2020s, clim2050s, clim2080s)
       print(paste("Extracting",names(all_climate[[i]]),"for zone",z,"out of",nrow(breeding_zones_10000)))
     }
     # make a temp dataframe copying the data for each zone
-    bz_df <- as.data.frame(breeding_zones_10000)
+    bz_df_10000 <- as.data.frame(breeding_zones_10000)
     # append climate summary data
-    bz_df$zone_max <- zmax
-    bz_df$zone_min <- zmin
-    bz_df$zone_mean <- zmean
-    bz_df$zone_median <- zmedian
-    bz_df$zone_center <- zcenter
-    bz_df$zone_transfer_limit <- zTL
-    bz_df$clim_var <- variable
+    bz_df_10000$zone_max <- zmax
+    bz_df_10000$zone_min <- zmin
+    bz_df_10000$zone_mean <- zmean
+    bz_df_10000$zone_median <- zmedian
+    bz_df_10000$zone_center <- zcenter
+    bz_df_10000$zone_transfer_limit <- zTL
+    bz_df_10000$clim_var <- variable
     # add to master dataframe
-    full_df_10000 <- rbind(full_df_10000,bz_df)
+    full_df_10000 <- rbind(full_df_10000,bz_df_10000)
   }
 
 routt_climate_stats_10000 <- full_df_10000 %>% 
@@ -266,7 +451,7 @@ routt_climate_stats_10000 <- full_df_10000 %>%
 
 ###calculate climate medians for 9,000ft in Routt NF
  # initialize empty vectors
-  bz_df <- c()
+  bz_df_9000 <- c()
   full_df_9000 <- c()
   zmax <- c()
   zmin <- c()
@@ -297,17 +482,17 @@ routt_climate_stats_10000 <- full_df_10000 %>%
       print(paste("Extracting",names(all_climate[[i]]),"for zone",z,"out of",nrow(breeding_zones_9000)))
     }
     # make a temp dataframe copying the data for each zone
-    bz_df <- as.data.frame(breeding_zones_9000)
+    bz_df_9000 <- as.data.frame(breeding_zones_9000)
     # append climate summary data
-    bz_df$zone_max <- zmax
-    bz_df$zone_min <- zmin
-    bz_df$zone_mean <- zmean
-    bz_df$zone_median <- zmedian
-    bz_df$zone_center <- zcenter
-    bz_df$zone_transfer_limit <- zTL
-    bz_df$clim_var <- variable
+    bz_df_9000$zone_max <- zmax
+    bz_df_9000$zone_min <- zmin
+    bz_df_9000$zone_mean <- zmean
+    bz_df_9000$zone_median <- zmedian
+    bz_df_9000$zone_center <- zcenter
+    bz_df_9000$zone_transfer_limit <- zTL
+    bz_df_9000$clim_var <- variable
     # add to master dataframe
-    full_df_9000 <- rbind(full_df_9000,bz_df)
+    full_df_9000 <- rbind(full_df_9000, bz_df_9000)
   }
 
 routt_climate_stats_9000 <- full_df_9000 %>% 
@@ -316,14 +501,13 @@ routt_climate_stats_9000 <- full_df_9000 %>%
 
 routt_climate_stats <- bind_rows(routt_climate_stats_9000, routt_climate_stats_10000)
 
-
 ggplot(routt_climate_stats_9000)+
-  geom_point(aes(x=period, y=zone_center, shape=factor(ZONE_NO), color=period))+
+  geom_point(aes(x=period, y=zone_center, color=period))+
   facet_wrap(~climvar, scales="free")+
   scale_color_manual(values=c("black","green","cyan3","yellow","red"))
 
 ggplot(routt_climate_stats_10000)+
-  geom_point(aes(x=period, y=zone_center, shape=factor(ZONE_NO), color=period))+
+  geom_point(aes(x=period, y=zone_center, color=period))+
   facet_wrap(~climvar, scales="free")+
   scale_color_manual(values=c("black","green","cyan3","yellow","red"))
 
@@ -337,27 +521,28 @@ clim_allspecies<- bind_rows(clim_abla %>% mutate(species="abla"),
           clim_pico %>% mutate(species="pico"))
 
 all_climate_wide <- routt_climate_stats %>% 
-  dplyr::select(c(ZONE_NO, elev, period, climvar, zone_center)) %>% 
+  dplyr::select(c(elev, period, climvar, zone_center)) %>% 
   pivot_wider(names_from = climvar, values_from = zone_center)
-
+```
+##plots
+```{r}
 ##takes ~ 3min to produce each graph
 ggplot(clim_allspecies, aes(x=NFFD, y=MAP))+
   geom_density_2d_filled(contour_var = "ndensity", n=20)+
   facet_grid(elev~species, scales="free")+
-  geom_point(data=all_climate_wide, aes(x=NFFD, y=MAP, col=period, shape=factor(ZONE_NO)))
+  geom_point(data=all_climate_wide, aes(x=NFFD, y=MAP, col=period))
 
 ggplot(clim_allspecies, aes(x=MCMT, y=SHM))+
   geom_density_2d_filled(contour_var = "ndensity", n=20)+
   facet_grid(elev~species, scales="free")+
-  geom_point(data=all_climate_wide, aes(x=MCMT, y=SHM, color=period, shape=factor(ZONE_NO)), size=3)+
+  geom_point(data=all_climate_wide, aes(x=MCMT, y=SHM, color=period), size=3)+
   scale_shape_manual(values=c(15,16,17))+
   scale_color_manual(values=rev(sequential_hcl(palette="Heat 2", n=5)))+
   ylim(c(0,150))
 
-library(colorspace)
-
-
 ```
+
+#Explore Seedlots
 
 ```{r}
 ###look for seedlots
