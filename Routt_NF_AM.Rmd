@@ -309,7 +309,9 @@ ggplot(z_props %>% filter(prop>.01) %>% arrange(prop), aes(x=1,y=prop, fill=fact
 ggplot()+
   geom_spatraster(data=evt_HPBE %>% filter(EVT_NAME %in% c(z_props %>% filter(prop>.01) %>% arrange(prop) %>% pull(EVT_NAME))), aes(fill=EVT_NAME))+
     scale_fill_manual(values=c(unname(cols25(n=8))[7],unname(cols25(n=8))[5],unname(cols25(n=8))[1],unname(cols25(n=8))[8],unname(cols25(n=8))[6],unname(cols25(n=8))[4],unname(cols25(n=8))[3],unname(cols25(n=8))[2]), name="Veg Type")
+```
 
+```{r}
 ##elevation of fires
 morgan_creek_elev_crop<- crop(HPBE_elev, mtbs_perims_HPBE %>% filter(Incid_Name == "MORGAN CREEK"))
 morgan_creek_elev <- mask(morgan_creek_elev_crop, mtbs_perims_HPBE %>% filter(Incid_Name == "MORGAN CREEK"))
@@ -318,7 +320,181 @@ hist(morgan_creek_elev*3.281, main="Morgan Creek Fire Elevations")
 big_red_elev_crop<- crop(HPBE_elev, mtbs_perims_HPBE %>% filter(Incid_Name == "BIG RED"))
 big_red_elev <- mask(big_red_elev_crop, mtbs_perims_HPBE %>% filter(Incid_Name == "BIG RED"))
 hist(big_red_elev*3.281, main="Big Red Fire Elevations")
-#####
+ggplot()+
+  geom_spatraster(data=big_red_elev)
+big_red_evt_elev <- crop(evt_bigred, big_red_elev)
+bigred_elev_9000 <- clamp(big_red_elev, lower=2590.8, upper=2743.2, values=FALSE)
+bigred_combined_9000<- c(evt_bigred %>% resample(bigred_elev_9000),bigred_elev_9000) %>% 
+  mask(bigred_elev_9000)
+
+ggplot()+
+  geom_spatraster(data= bigred_combined_9000)+
+  scale_fill_manual(values=unname(cols25(n=20)))
+
+roads <- vect("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/spatial/S_USA.RoadCore_FS/S_USA.RoadCore_FS.shp")
+roads_HPBE <- crop(roads, HPBE_boundary)
+
+plot(roads_HPBE)
+
+road_buffer <- buffer(roads_HPBE, width=804.7)
+plot(road_buffer)
+HPBE_terrain <- terrain(HPBE_elev_crop, v=c("slope", "aspect"), unit="degrees")
+HPBE_goodslope <- clamp(HPBE_terrain$slope, lower=0, upper=24, values=FALSE) 
+plot(HPBE_goodslope)
+
+##we want a planting site that is within 1/2 mile from a road, between 8500-9000 ft, slope less than 24 degrees
+HPBE_goodslope
+
+bigred_sites9000_rds <- mask(bigred_combined_9000, road_buffer)
+
+ggplot()+
+  geom_spatraster(data=bigred_sites9000_rds$USGS_13_n41w107_20230314)
+ggplot()+
+  geom_spatraster(data=bigred_combined$USGS_13_n41w107_20230314)
+
+bigred_sites9000 <- mask(bigred_sites9000_rds, crop(HPBE_goodslope, bigred_sites9000_rds))
+
+ggplot()+
+  geom_spatraster(data=bigred_sites9000$USGS_13_n41w107_20230314)
+
+#north
+Nmatrix<- data.frame(from=c(45), to=c(315), becomes=c(NA)) 
+
+northernaspects <- classify(x=HPBE_terrain$aspect, rcl=Nmatrix, right=NA)
+plot(northernaspects)
+
+bigred_sites9000N <- mask(bigred_sites9000, crop(northernaspects,bigred_sites9000))
+
+ggplot()+
+  geom_spatraster(data=bigred_sites9000N$USGS_13_n41w107_20230314)
+
+#east
+Ematrix<- data.frame(from=c(0,135), to=c(45,360), becomes=c(NA)) 
+
+easternaspects <- classify(x=HPBE_terrain$aspect, rcl=Ematrix, right=NA)
+plot(easternaspects)
+
+bigred_sites9000E <- mask(bigred_sites9000, crop(easternaspects,bigred_sites9000))
+
+ggplot()+
+  geom_spatraster(data=bigred_sites9000E$USGS_13_n41w107_20230314)
+
+#south
+Smatrix<- data.frame(from=c(0,225), to=c(135,360), becomes=c(NA)) 
+
+southernaspects <- classify(x=HPBE_terrain$aspect, rcl=Smatrix, right=NA)
+plot(southernaspects)
+
+bigred_sites9000S <- mask(bigred_sites9000, crop(southernaspects,bigred_sites9000))
+
+ggplot()+
+  geom_spatraster(data=bigred_sites9000S$USGS_13_n41w107_20230314)
+
+#west
+Wmatrix<- data.frame(from=c(0,315), to=c(225,360), becomes=c(NA)) 
+
+westernaspects <- classify(x=HPBE_terrain$aspect, rcl=Wmatrix, right=NA)
+plot(westernaspects)
+
+bigred_sites9000W <- mask(bigred_sites9000, crop(westernaspects,bigred_sites9000))
+
+ggplot()+
+  geom_spatraster(data=bigred_sites9000W$USGS_13_n41w107_20230314)
+
+bigred_sites9000N_polys <- classify(bigred_sites9000N$USGS_13_n41w107_20230314, rcl=data.frame(from=c(-Inf), to=c(Inf), becomes=c(1)),right=NA) %>% 
+  as.polygons() %>% 
+  disagg()
+
+bigred_sites9000N_polys$area <- terra::expanse(x=bigred_sites9000N_polys,unit="ha")
+
+writeVector(bigred_sites9000N_polys, "bigred_sites9000N_polys.shp")
+```
+
+##Morgan creek
+```{r}
+morgan_creek_elev_crop<- crop(HPBE_elev, mtbs_perims_HPBE %>% filter(Incid_Name == "MORGAN CREEK"))
+morgan_creek_elev <- mask(morgan_creek_elev_crop, mtbs_perims_HPBE %>% filter(Incid_Name == "MORGAN CREEK"))
+hist(morgan_creek_elev*3.281, main="Morgan Creek Fire Elevations")
+
+morgan_creek_evt_elev <- crop(evt_morgancr, morgan_creek_elev)
+morgancr_elev_9000 <- clamp(morgan_creek_elev, lower=2590.8, upper=2743.2, values=FALSE)
+morgancr_combined_9000<- c(evt_morgancr %>% resample(morgancr_elev_9000),morgancr_elev_9000) %>% 
+  mask(morgancr_elev_9000)
+
+ggplot()+
+  geom_spatraster(data= morgancr_combined_9000)+
+  scale_fill_manual(values=unname(cols25(n=20)))
+
+##we want a planting site that is within 1/2 mile from a road, between 8500-9000 ft, slope less than 24 degrees
+
+morgancr_sites9000_rds <- mask(morgancr_combined_9000, road_buffer)
+
+ggplot()+
+  geom_spatraster(data=morgancr_sites9000_rds$USGS_13_n41w107_20230314)
+ggplot()+
+  geom_spatraster(data=morgancr_combined_9000$USGS_13_n41w107_20230314)
+
+morgancr_sites9000 <- mask(morgancr_sites9000_rds, crop(HPBE_goodslope, morgancr_sites9000_rds))
+
+ggplot()+
+  geom_spatraster(data=morgancr_sites9000$USGS_13_n41w107_20230314)
+
+#north
+Nmatrix<- data.frame(from=c(45), to=c(315), becomes=c(NA)) 
+
+northernaspects <- classify(x=HPBE_terrain$aspect, rcl=Nmatrix, right=NA)
+plot(northernaspects)
+
+morgancr_sites9000N <- mask(morgancr_sites9000, crop(northernaspects,morgancr_sites9000))
+
+ggplot()+
+  geom_spatraster(data=morgancr_sites9000N$USGS_13_n41w107_20230314)
+
+#east
+Ematrix<- data.frame(from=c(0,135), to=c(45,360), becomes=c(NA)) 
+
+easternaspects <- classify(x=HPBE_terrain$aspect, rcl=Ematrix, right=NA)
+plot(easternaspects)
+
+morgancr_sites9000E <- mask(morgancr_sites9000, crop(easternaspects,morgancr_sites9000))
+
+ggplot()+
+  geom_spatraster(data=morgancr_sites9000E$USGS_13_n41w107_20230314)
+
+#south
+Smatrix<- data.frame(from=c(0,225), to=c(135,360), becomes=c(NA)) 
+
+southernaspects <- classify(x=HPBE_terrain$aspect, rcl=Smatrix, right=NA)
+plot(southernaspects)
+
+morgancr_sites9000S <- mask(morgancr_sites9000, crop(southernaspects,morgancr_sites9000))
+
+ggplot()+
+  geom_spatraster(data=morgancr_sites9000S$USGS_13_n41w107_20230314)
+
+#west
+Wmatrix<- data.frame(from=c(0,315), to=c(225,360), becomes=c(NA)) 
+
+westernaspects <- classify(x=HPBE_terrain$aspect, rcl=Wmatrix, right=NA)
+plot(westernaspects)
+
+morgancr_sites9000W <- mask(morgancr_sites9000, crop(westernaspects,morgancr_sites9000))
+
+ggplot()+
+  geom_spatraster(data=morgancr_sites9000W$USGS_13_n41w107_20230314)
+
+morgancr_sites9000N_polys <- classify(morgancr_sites9000N$USGS_13_n41w107_20230314, rcl=data.frame(from=c(-Inf), to=c(Inf), becomes=c(1)),right=NA) %>% 
+  as.polygons() %>% 
+  disagg()
+
+morgancr_sites9000N_polys$area <- terra::expanse(x=morgancr_sites9000N_polys,unit="ha")
+
+writeVector(morgancr_sites9000N_polys, "morgancr_sites9000N_polys.shp")
+
+```
+
+```{r}
+###############
 
 region_2_4 <- adminboundaries %>% 
   subset(subset = adminboundaries$REGION %in% c("02","03","04")) %>% 
@@ -330,8 +506,8 @@ region_2_rast <- rasterize(region_2, region_2_grid)
 ##seed zones
 co_breedingzones<- vect("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/R2 reforestation/R2-reforestation/SST_standalone/SST_standalone/co_breedingzones.shp")
 
-routt_10000_bz <- co_breedingzones %>% filter(SEED_COL_Z %in% c(26,29,55) & r2elev_z10==10000)
-routt_9000_bz <- co_breedingzones %>% filter(SEED_COL_Z %in% c(26,29,55) & r2elev_z10==9000)
+routt_10000_bz <- co_breedingzones %>% filter(SEED_COL_Z %in% c(26,29,55) & r2elev_z10==10000) ## 10,000 = 9500-10000 ft
+routt_9000_bz <- co_breedingzones %>% filter(SEED_COL_Z %in% c(26,29,55) & r2elev_z10==9000) ## 9,000 = 8500-9000 ft
 
 ggplot()+
   geom_spatvector(data=routt_10000_bz, aes(fill=factor(SEED_COL_Z)))+
@@ -552,7 +728,7 @@ co_breedingzones_df <- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro
 co_breedingzones_df %>% 
   filter(SEED_COL_Z %in% c(26,29,55) & r2elev_z10 == "10000")
 
-##breeding zones 430. 431, and 434 are the zones for the 10000ft band in the Routt NF area of interest
+##breeding zones 430, 431, and 434 are the zones for the 10000ft band in the Routt NF area of interest
 
 ##read in nursery seed sources
 bseed<- read.csv("C:/Users/KatherineNigro/Box/01. katherine.nigro Workspace/ASCC/ASCC/nursery inventories/Bessey_info/20230707_besseylots_editedlatlongs.csv")
